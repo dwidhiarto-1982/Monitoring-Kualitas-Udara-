@@ -1,0 +1,824 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pantau Kualitas Udara Indonesia (BMKG / ISPU Standard)</title>
+    
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Chart.js CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    
+    <!-- Font Awesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Plus Jakarta Sans', 'sans-serif'],
+                    },
+                    colors: {
+                        aqi: {
+                            good: '#10B981',       <!-- Hijau - Baik -->
+                            moderate: '#F59E0B',   <!-- Kuning - Sedang -->
+                            unhealthy1: '#F97316', <!-- Oranye - Tidak Sehat bagi Kelompok Sensitif -->
+                            unhealthy2: '#EF4444', <!-- Merah - Tidak Sehat -->
+                            veryUnhealthy: '#8B5CF6', <!-- Ungu - Sangat Tidak Sehat -->
+                            hazardous: '#881337',  <!-- Cokelat/Marun - Berbahaya -->
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    
+    <style>
+        body {
+            background-color: #0f172a;
+            color: #f8fafc;
+            font-family: 'Plus Jakarta Sans', sans-serif;
+        }
+        .glass-card {
+            background: rgba(30, 41, 59, 0.7);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+        }
+        .glass-card-hover:hover {
+            border-color: rgba(255, 255, 255, 0.2);
+            transform: translateY(-2px);
+            transition: all 0.2s ease;
+        }
+        /* Custom scrollbar */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #0f172a;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #334155;
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #475569;
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col justify-between antialiased">
+
+    <!-- Top Header Navigation -->
+    <header class="sticky top-0 z-50 glass-card border-b border-slate-800 px-4 lg:px-8 py-4">
+        <div class="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
+            <!-- Brand / Logo -->
+            <div class="flex items-center space-x-3">
+                <div class="p-2.5 bg-blue-600/20 text-blue-400 rounded-xl border border-blue-500/30">
+                    <i class="fa-solid fa-wind text-2xl"></i>
+                </div>
+                <div>
+                    <h1 class="text-xl font-bold tracking-tight text-white flex items-center gap-2">
+                        AirNusantara <span class="text-xs font-semibold px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-400 border border-blue-500/30">38 Provinsi</span>
+                    </h1>
+                    <p class="text-xs text-slate-400">Pemantauan Kualitas Udara Real-Time Seluruh Ibukota Provinsi Indonesia</p>
+                </div>
+            </div>
+
+            <!-- City Selection, Filter & Geolocation Controls -->
+            <div class="flex flex-col sm:flex-row items-center gap-2 w-full sm:w-auto">
+                <!-- Island Filter Dropdown -->
+                <div class="relative w-full sm:w-40">
+                    <i class="fa-solid fa-map-location-dot absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs"></i>
+                    <select id="regionFilter" class="w-full bg-slate-800/90 text-slate-200 text-xs rounded-xl pl-8 pr-7 py-2.5 border border-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500 transition appearance-none cursor-pointer font-medium">
+                        <option value="ALL">Semua Wilayah</option>
+                        <option value="Sumatera">Sumatera</option>
+                        <option value="Jawa">Jawa & Bali</option>
+                        <option value="Nusa Tenggara">Nusa Tenggara</option>
+                        <option value="Kalimantan">Kalimantan</option>
+                        <option value="Sulawesi">Sulawesi</option>
+                        <option value="Maluku">Maluku</option>
+                        <option value="Papua">Papua</option>
+                    </select>
+                    <i class="fa-solid fa-chevron-down absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 text-[10px] pointer-events-none"></i>
+                </div>
+
+                <!-- 38 Provincial Capitals Select -->
+                <div class="relative flex-1 w-full sm:w-72">
+                    <i class="fa-solid fa-location-dot absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs"></i>
+                    <select id="citySelect" class="w-full bg-slate-800/90 text-slate-200 text-xs sm:text-sm rounded-xl pl-8 pr-8 py-2.5 border border-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500 transition appearance-none cursor-pointer font-medium">
+                        <!-- Populated dynamically via JS -->
+                    </select>
+                    <i class="fa-solid fa-chevron-down absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs pointer-events-none"></i>
+                </div>
+
+                <div class="flex items-center gap-2 w-full sm:w-auto justify-end">
+                    <button id="geoBtn" title="Gunakan Lokasi Saat Ini" class="p-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl border border-slate-700 transition flex items-center justify-center">
+                        <i class="fa-solid fa-crosshairs text-base"></i>
+                    </button>
+
+                    <button id="refreshBtn" title="Perbarui Data" class="p-2.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl transition flex items-center justify-center shadow-lg shadow-blue-600/20">
+                        <i class="fa-solid fa-rotate-right text-base" id="refreshIcon"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content Container -->
+    <main class="max-w-7xl mx-auto px-4 lg:px-8 py-6 w-full flex-grow space-y-6">
+
+        <!-- Banner Info & Last Update -->
+        <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 text-sm text-slate-400 bg-slate-800/40 p-3.5 rounded-2xl border border-slate-800">
+            <div class="flex items-center gap-2">
+                <span class="inline-block w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                <span id="currentCityName" class="font-semibold text-slate-200">Jakarta</span> - <span id="updateTime">Memuat data...</span>
+            </div>
+            <div class="text-xs text-slate-500 flex items-center gap-1">
+                <i class="fa-regular fa-clock"></i> Updates per jam via Open-Meteo API
+            </div>
+        </div>
+
+        <!-- Section 1: Real-time AQI Overview & Recommendations -->
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            
+            <!-- AQI Main Card (5 cols) -->
+            <div id="aqiMainCard" class="lg:col-span-5 glass-card rounded-3xl p-6 sm:p-8 flex flex-col justify-between relative overflow-hidden transition-all duration-300">
+                <div class="flex justify-between items-start z-10">
+                    <div>
+                        <span class="text-xs font-bold uppercase tracking-wider text-slate-400">Indeks Kualitas Udara (ISPU / AQI)</span>
+                        <h2 id="aqiStatusText" class="text-2xl sm:text-3xl font-extrabold text-white mt-1">Memuat...</h2>
+                    </div>
+                    <div id="aqiBadgeIcon" class="p-3 sm:p-4 rounded-2xl bg-slate-800 text-slate-300 text-2xl sm:text-3xl">
+                        <i class="fa-solid fa-smog"></i>
+                    </div>
+                </div>
+
+                <!-- Big Value -->
+                <div class="my-6 z-10 flex items-baseline gap-3">
+                    <span id="aqiValue" class="text-6xl sm:text-7xl font-black text-white tracking-tight">--</span>
+                    <span class="text-sm font-semibold text-slate-400">PM2.5 Eq. µg/m³</span>
+                </div>
+
+                <!-- Progress Bar -->
+                <div class="z-10 space-y-2">
+                    <div class="w-full bg-slate-900/60 rounded-full h-3 overflow-hidden p-0.5 border border-slate-700/50">
+                        <div id="aqiProgressBar" class="h-full rounded-full transition-all duration-1000 bg-emerald-500" style="width: 0%"></div>
+                    </div>
+                    <div class="flex justify-between text-[10px] text-slate-400 font-medium px-1">
+                        <span>0 (Baik)</span>
+                        <span>50</span>
+                        <span>100</span>
+                        <span>150</span>
+                        <span>200+ (Bahaya)</span>
+                    </div>
+                </div>
+
+                <!-- Background Subtle Glow -->
+                <div id="cardGlow" class="absolute -right-10 -bottom-10 w-48 h-48 rounded-full blur-3xl opacity-20 bg-blue-500 pointer-events-none"></div>
+            </div>
+
+            <!-- Health Recommendation & Dominant Pollutant (7 cols) -->
+            <div class="lg:col-span-7 grid grid-cols-1 sm:grid-cols-2 gap-4">
+                
+                <!-- Recommendation Box -->
+                <div class="glass-card rounded-3xl p-6 flex flex-col justify-between">
+                    <div>
+                        <div class="flex items-center gap-2.5 text-blue-400 mb-3">
+                            <i class="fa-solid fa-heart-pulse text-lg"></i>
+                            <h3 class="font-bold text-slate-200">Rekomendasi Kesehatan</h3>
+                        </div>
+                        <p id="healthAdvice" class="text-sm text-slate-300 leading-relaxed">
+                            Memuat rekomendasi aktivitas berdasarkan kualitas udara saat ini...
+                        </p>
+                    </div>
+                    <div class="mt-4 pt-4 border-t border-slate-800/80 flex items-center justify-between text-xs text-slate-400">
+                        <span>Masker Outdoor:</span>
+                        <span id="maskAdvice" class="font-semibold text-slate-200">--</span>
+                    </div>
+                </div>
+
+                <!-- Weather & Additional Context -->
+                <div class="glass-card rounded-3xl p-6 flex flex-col justify-between">
+                    <div>
+                        <div class="flex items-center gap-2.5 text-amber-400 mb-3">
+                            <i class="fa-solid fa-shield-cat text-lg"></i>
+                            <h3 class="font-bold text-slate-200">Saran Aktivitas</h3>
+                        </div>
+                        <ul class="text-sm text-slate-300 space-y-2.5" id="activityList">
+                            <li class="flex items-start gap-2">
+                                <i class="fa-solid fa-check text-emerald-400 mt-1 text-xs"></i>
+                                <span>Ventilasi rumah aman dibuka secara berkala.</span>
+                            </li>
+                        </ul>
+                    </div>
+                    <div class="mt-4 pt-4 border-t border-slate-800/80 flex items-center justify-between text-xs text-slate-400">
+                        <span>Kelompok Rentan:</span>
+                        <span id="vulnerableAdvice" class="font-semibold text-slate-200">--</span>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+
+        <!-- Section 2: Pollutants Breakdown Grid -->
+        <div>
+            <h3 class="text-lg font-bold text-slate-200 mb-4 flex items-center gap-2">
+                <i class="fa-solid fa-chart-simple text-blue-400"></i> Detail Parameter Polutant
+            </h3>
+            <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 sm:gap-4">
+                
+                <!-- PM2.5 -->
+                <div class="glass-card glass-card-hover rounded-2xl p-4 flex flex-col justify-between">
+                    <span class="text-xs font-semibold text-slate-400">PM<sub>2.5</sub></span>
+                    <div class="my-2">
+                        <span id="pm25Val" class="text-xl font-bold text-slate-100">--</span>
+                        <span class="text-[10px] text-slate-400">µg/m³</span>
+                    </div>
+                    <span id="pm25Status" class="text-[11px] font-medium px-2 py-0.5 rounded-md bg-slate-800 text-slate-300 w-fit">--</span>
+                </div>
+
+                <!-- PM10 -->
+                <div class="glass-card glass-card-hover rounded-2xl p-4 flex flex-col justify-between">
+                    <span class="text-xs font-semibold text-slate-400">PM<sub>10</sub></span>
+                    <div class="my-2">
+                        <span id="pm10Val" class="text-xl font-bold text-slate-100">--</span>
+                        <span class="text-[10px] text-slate-400">µg/m³</span>
+                    </div>
+                    <span id="pm10Status" class="text-[11px] font-medium px-2 py-0.5 rounded-md bg-slate-800 text-slate-300 w-fit">--</span>
+                </div>
+
+                <!-- O3 (Ozone) -->
+                <div class="glass-card glass-card-hover rounded-2xl p-4 flex flex-col justify-between">
+                    <span class="text-xs font-semibold text-slate-400">O<sub>3</sub> (Ozon)</span>
+                    <div class="my-2">
+                        <span id="o3Val" class="text-xl font-bold text-slate-100">--</span>
+                        <span class="text-[10px] text-slate-400">µg/m³</span>
+                    </div>
+                    <span id="o3Status" class="text-[11px] font-medium px-2 py-0.5 rounded-md bg-slate-800 text-slate-300 w-fit">--</span>
+                </div>
+
+                <!-- NO2 -->
+                <div class="glass-card glass-card-hover rounded-2xl p-4 flex flex-col justify-between">
+                    <span class="text-xs font-semibold text-slate-400">NO<sub>2</sub></span>
+                    <div class="my-2">
+                        <span id="no2Val" class="text-xl font-bold text-slate-100">--</span>
+                        <span class="text-[10px] text-slate-400">µg/m³</span>
+                    </div>
+                    <span id="no2Status" class="text-[11px] font-medium px-2 py-0.5 rounded-md bg-slate-800 text-slate-300 w-fit">--</span>
+                </div>
+
+                <!-- SO2 -->
+                <div class="glass-card glass-card-hover rounded-2xl p-4 flex flex-col justify-between">
+                    <span class="text-xs font-semibold text-slate-400">SO<sub>2</sub></span>
+                    <div class="my-2">
+                        <span id="so2Val" class="text-xl font-bold text-slate-100">--</span>
+                        <span class="text-[10px] text-slate-400">µg/m³</span>
+                    </div>
+                    <span id="so2Status" class="text-[11px] font-medium px-2 py-0.5 rounded-md bg-slate-800 text-slate-300 w-fit">--</span>
+                </div>
+
+                <!-- CO -->
+                <div class="glass-card glass-card-hover rounded-2xl p-4 flex flex-col justify-between">
+                    <span class="text-xs font-semibold text-slate-400">CO</span>
+                    <div class="my-2">
+                        <span id="coVal" class="text-xl font-bold text-slate-100">--</span>
+                        <span class="text-[10px] text-slate-400">µg/m³</span>
+                    </div>
+                    <span id="coStatus" class="text-[11px] font-medium px-2 py-0.5 rounded-md bg-slate-800 text-slate-300 w-fit">--</span>
+                </div>
+
+            </div>
+        </div>
+
+        <!-- Section 3: Chart Component (Historical & Forecast 24h) -->
+        <div class="glass-card rounded-3xl p-6">
+            <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
+                <div>
+                    <h3 class="text-lg font-bold text-slate-100 flex items-center gap-2">
+                        <i class="fa-solid fa-chart-line text-blue-400"></i> Tren Kualitas Udara (PM2.5 Per Jam)
+                    </h3>
+                    <p class="text-xs text-slate-400">Grafik 24 jam terakhir dan perkiraan 24 jam ke depan</p>
+                </div>
+                <div class="flex items-center gap-2 bg-slate-900/60 p-1 rounded-xl border border-slate-800 text-xs">
+                    <button id="btnTrendPM25" class="px-3 py-1.5 rounded-lg font-semibold bg-blue-600 text-white transition">PM2.5</button>
+                    <button id="btnTrendPM10" class="px-3 py-1.5 rounded-lg font-semibold text-slate-400 hover:text-slate-200 transition">PM10</button>
+                </div>
+            </div>
+
+            <!-- Canvas Container -->
+            <div class="relative w-full h-72 sm:h-80">
+                <canvas id="aqiChart"></canvas>
+            </div>
+        </div>
+
+        <!-- Section 4: BMKG Standard Information & Scale -->
+        <div class="glass-card rounded-3xl p-6">
+            <h3 class="text-lg font-bold text-slate-100 mb-4 flex items-center gap-2">
+                <i class="fa-solid fa-circle-info text-blue-400"></i> Skala Indeks Standar Pencemar Udara (ISPU / BMKG)
+            </h3>
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3 text-xs">
+                
+                <div class="p-3.5 rounded-2xl bg-emerald-950/40 border border-emerald-500/30">
+                    <div class="flex items-center gap-2 text-emerald-400 font-bold mb-1">
+                        <span class="w-3 h-3 rounded-full bg-emerald-500"></span> Baik (0-50)
+                    </div>
+                    <p class="text-slate-300">Tingkat kualitas udara yang tidak memberikan efek negatif bagi kesehatan manusia maupun hewan.</p>
+                </div>
+
+                <div class="p-3.5 rounded-2xl bg-amber-950/40 border border-amber-500/30">
+                    <div class="flex items-center gap-2 text-amber-400 font-bold mb-1">
+                        <span class="w-3 h-3 rounded-full bg-amber-500"></span> Sedang (51-100)
+                    </div>
+                    <p class="text-slate-300">Tidak berpengaruh pada kesehatan manusia/hewan tetapi berpengaruh pada tumbuhan yang sensitif.</p>
+                </div>
+
+                <div class="p-3.5 rounded-2xl bg-orange-950/40 border border-orange-500/30">
+                    <div class="flex items-center gap-2 text-orange-400 font-bold mb-1">
+                        <span class="w-3 h-3 rounded-full bg-orange-500"></span> Tidak Sehat (101-200)
+                    </div>
+                    <p class="text-slate-300">Bersifat merugikan pada manusia ataupun kelompok hewan yang sensitif atau menimbulkan kerusakan.</p>
+                </div>
+
+                <div class="p-3.5 rounded-2xl bg-red-950/40 border border-red-500/30">
+                    <div class="flex items-center gap-2 text-red-400 font-bold mb-1">
+                        <span class="w-3 h-3 rounded-full bg-red-500"></span> Sangat Tidak Sehat (201-300)
+                    </div>
+                    <p class="text-slate-300">Kualitas udara yang dapat meningkatkan risiko kesehatan pada sejumlah segmen populasi yang terpapar.</p>
+                </div>
+
+                <div class="p-3.5 rounded-2xl bg-purple-950/40 border border-purple-500/30">
+                    <div class="flex items-center gap-2 text-purple-400 font-bold mb-1">
+                        <span class="w-3 h-3 rounded-full bg-purple-500"></span> Berbahaya (301+)
+                    </div>
+                    <p class="text-slate-300">Secara umum kualitas udara dapat merugikan kesehatan yang serius pada populasi secara luas.</p>
+                </div>
+
+                <div class="p-3.5 rounded-2xl bg-slate-800/60 border border-slate-700/50">
+                    <div class="flex items-center gap-2 text-slate-300 font-bold mb-1">
+                        <i class="fa-solid fa-bullhorn text-blue-400"></i> Sumber Data
+                    </div>
+                    <p class="text-slate-400">Open-Meteo Air Quality Model (CAMS European Centre), terintegrasi dengan data jaringan pemantauan lokasi Indonesia.</p>
+                </div>
+
+            </div>
+        </div>
+
+    </main>
+
+    <!-- Footer -->
+    <footer class="border-t border-slate-800 py-6 px-4 text-center text-xs text-slate-500">
+        <p>&copy; 2026 AirNusantara — Pemantau Kualitas Udara Real-Time Indonesia. Data diperbarui otomatis setiap jam.</p>
+    </footer>
+
+    <!-- App Logic JavaScript -->
+    <script>
+        // Database 38 Ibukota Provinsi di Indonesia lengkap dengan latitude & longitude
+        const CITIES = [
+            // SUMATERA
+            { name: "Banda Aceh", province: "Aceh", region: "Sumatera", lat: 5.5483, lon: 95.3238 },
+            { name: "Medan", province: "Sumatera Utara", region: "Sumatera", lat: 3.5952, lon: 98.6722 },
+            { name: "Padang", province: "Sumatera Barat", region: "Sumatera", lat: -0.9471, lon: 100.4172 },
+            { name: "Pekanbaru", province: "Riau", region: "Sumatera", lat: 0.5071, lon: 101.4478 },
+            { name: "Tanjung Pinang", province: "Kepulauan Riau", region: "Sumatera", lat: 0.9167, lon: 104.4583 },
+            { name: "Jambi", province: "Jambi", region: "Sumatera", lat: -1.6100, lon: 103.6100 },
+            { name: "Palembang", province: "Sumatera Selatan", region: "Sumatera", lat: -2.9909, lon: 104.7565 },
+            { name: "Pangkalpinang", province: "Kepulauan Bangka Belitung", region: "Sumatera", lat: -2.1333, lon: 106.1167 },
+            { name: "Bengkulu", province: "Bengkulu", region: "Sumatera", lat: -3.8004, lon: 102.2655 },
+            { name: "Bandar Lampung", province: "Lampung", region: "Sumatera", lat: -5.4500, lon: 105.2667 },
+
+            // JAWA & BALI
+            { name: "Jakarta", province: "DKI Jakarta", region: "Jawa", lat: -6.2088, lon: 106.8456 },
+            { name: "Serang", province: "Banten", region: "Jawa", lat: -6.1200, lon: 106.1500 },
+            { name: "Bandung", province: "Jawa Barat", region: "Jawa", lat: -6.9175, lon: 107.6191 },
+            { name: "Semarang", province: "Jawa Tengah", region: "Jawa", lat: -6.9667, lon: 110.4167 },
+            { name: "Yogyakarta", province: "DI Yogyakarta", region: "Jawa", lat: -7.7956, lon: 110.3695 },
+            { name: "Surabaya", province: "Jawa Timur", region: "Jawa", lat: -7.2575, lon: 112.7521 },
+            { name: "Denpasar", province: "Bali", region: "Jawa", lat: -8.6705, lon: 115.2126 },
+
+            // NUSA TENGGARA
+            { name: "Mataram", province: "Nusa Tenggara Barat", region: "Nusa Tenggara", lat: -8.5833, lon: 116.1167 },
+            { name: "Kupang", province: "Nusa Tenggara Timur", region: "Nusa Tenggara", lat: -10.1772, lon: 123.6070 },
+
+            // KALIMANTAN
+            { name: "Pontianak", province: "Kalimantan Barat", region: "Kalimantan", lat: -0.0263, lon: 109.3425 },
+            { name: "Palangkaraya", province: "Kalimantan Tengah", region: "Kalimantan", lat: -2.2100, lon: 113.9200 },
+            { name: "Banjarmasin", province: "Kalimantan Selatan", region: "Kalimantan", lat: -3.3194, lon: 114.5908 },
+            { name: "Samarinda", province: "Kalimantan Timur", region: "Kalimantan", lat: -0.5022, lon: 117.1536 },
+            { name: "Tanjung Selor", province: "Kalimantan Utara", region: "Kalimantan", lat: 2.8333, lon: 117.3667 },
+
+            // SULAWESI
+            { name: "Manado", province: "Sulawesi Utara", region: "Sulawesi", lat: 1.4748, lon: 124.8428 },
+            { name: "Gorontalo", province: "Gorontalo", region: "Sulawesi", lat: 0.5435, lon: 123.0568 },
+            { name: "Palu", province: "Sulawesi Tengah", region: "Sulawesi", lat: -0.8917, lon: 119.8707 },
+            { name: "Mamuju", province: "Sulawesi Barat", region: "Sulawesi", lat: -2.6748, lon: 118.8885 },
+            { name: "Makassar", province: "Sulawesi Selatan", region: "Sulawesi", lat: -5.1477, lon: 119.4327 },
+            { name: "Kendari", province: "Sulawesi Tenggara", region: "Sulawesi", lat: -3.9985, lon: 122.5126 },
+
+            // MALUKU
+            { name: "Ambon", province: "Maluku", region: "Maluku", lat: -3.6554, lon: 128.1906 },
+            { name: "Sofifi", province: "Maluku Utara", region: "Maluku", lat: 0.7300, lon: 127.5600 },
+
+            // PAPUA (Termasuk 4 Provinsi Baru)
+            { name: "Jayapura", province: "Papua", region: "Papua", lat: -2.5489, lon: 140.7181 },
+            { name: "Manokwari", province: "Papua Barat", region: "Papua", lat: -0.8614, lon: 134.0620 },
+            { name: "Sorong", province: "Papua Barat Daya", region: "Papua", lat: -0.8762, lon: 131.2558 },
+            { name: "Nabire", province: "Papua Tengah", region: "Papua", lat: -3.3667, lon: 135.5000 },
+            { name: "Wamena", province: "Papua Pegunungan", region: "Papua", lat: -4.0833, lon: 138.9500 },
+            { name: "Merauke", province: "Papua Selatan", region: "Papua", lat: -8.4932, lon: 140.4013 }
+        ];
+
+        // State variables
+        let chartInstance = null;
+        let activeParameter = 'pm2_5';
+        let hourlyDataStore = null;
+
+        // Colors mapped to AQI categories
+        const STATUS_CONFIG = {
+            GOOD: {
+                label: 'Sangat Baik',
+                color: '#10B981',
+                bgClass: 'from-emerald-950/80 to-slate-900',
+                textClass: 'text-emerald-400',
+                icon: 'fa-face-smile',
+                advice: 'Kualitas udara sangat baik. Ideal untuk beraktivitas di luar ruangan dan berolahraga.',
+                mask: 'Tidak Diperlukan',
+                vulnerable: 'Aman untuk semua'
+            },
+            MODERATE: {
+                label: 'Sedang / Baik',
+                color: '#F59E0B',
+                bgClass: 'from-amber-950/80 to-slate-900',
+                textClass: 'text-amber-400',
+                icon: 'fa-face-meh',
+                advice: 'Kualitas udara dapat diterima. Kelompok yang sangat sensitif sebaiknya membatasi aktivitas outdoor yang terlalu lama.',
+                mask: 'Opsional bagi yang sensitif',
+                vulnerable: 'Hati-hati jika sensitif'
+            },
+            UNHEALTHY_SENSITIVE: {
+                label: 'Tidak Sehat (Sensitif)',
+                color: '#F97316',
+                bgClass: 'from-orange-950/80 to-slate-900',
+                textClass: 'text-orange-400',
+                icon: 'fa-face-frown',
+                advice: 'Kelompok sensitif (penderita asma, lansia, anak-anak) mungkin mengalami efek kesehatan. Kurangi aktivitas berat di luar.',
+                mask: 'Disarankan saat di luar',
+                vulnerable: 'Kurangi aktivitas luar'
+            },
+            UNHEALTHY: {
+                label: 'Tidak Sehat',
+                color: '#EF4444',
+                bgClass: 'from-red-950/80 to-slate-900',
+                textClass: 'text-red-400',
+                icon: 'fa-face-mask',
+                advice: 'Kualitas udara buruk. Setiap orang dapat mengalami dampak kesehatan. Batasi durasi di luar ruangan.',
+                mask: 'Wajib dipasang (N95/KN95)',
+                vulnerable: 'Hindari aktivitas luar'
+            },
+            VERY_UNHEALTHY: {
+                label: 'Sangat Tidak Sehat',
+                color: '#8B5CF6',
+                bgClass: 'from-purple-950/80 to-slate-900',
+                textClass: 'text-purple-400',
+                icon: 'fa-head-side-mask',
+                advice: 'Peringatan kesehatan! Seluruh populasi berisiko terdampak serius. Tutup jendela dan gunakan pemurni udara (air purifier).',
+                mask: 'Sangat Wajib jika harus keluar',
+                vulnerable: 'TETAP DI DALAM RUANGAN'
+            },
+            HAZARDOUS: {
+                label: 'Berbahaya',
+                color: '#881337',
+                bgClass: 'from-rose-950/80 to-slate-900',
+                textClass: 'text-rose-500',
+                icon: 'fa-skull-crossbones',
+                advice: 'Bahaya tingkat darurat kesehatan! Seluruh aktivitas di luar ruangan harus dihentikan.',
+                mask: 'Sangat Wajib',
+                vulnerable: 'DARURAT - Jangan keluar'
+            }
+        };
+
+        // DOM elements
+        const regionFilter = document.getElementById('regionFilter');
+        const citySelect = document.getElementById('citySelect');
+        const geoBtn = document.getElementById('geoBtn');
+        const refreshBtn = document.getElementById('refreshBtn');
+        const refreshIcon = document.getElementById('refreshIcon');
+        const currentCityName = document.getElementById('currentCityName');
+        const updateTime = document.getElementById('updateTime');
+
+        const aqiValue = document.getElementById('aqiValue');
+        const aqiStatusText = document.getElementById('aqiStatusText');
+        const aqiBadgeIcon = document.getElementById('aqiBadgeIcon');
+        const aqiProgressBar = document.getElementById('aqiProgressBar');
+        const cardGlow = document.getElementById('cardGlow');
+
+        const healthAdvice = document.getElementById('healthAdvice');
+        const maskAdvice = document.getElementById('maskAdvice');
+        const vulnerableAdvice = document.getElementById('vulnerableAdvice');
+        const activityList = document.getElementById('activityList');
+
+        const btnTrendPM25 = document.getElementById('btnTrendPM25');
+        const btnTrendPM10 = document.getElementById('btnTrendPM10');
+
+        // Populate City Options
+        function populateCityDropdown(region = 'ALL') {
+            citySelect.innerHTML = '';
+            const filteredCities = region === 'ALL' 
+                ? CITIES 
+                : CITIES.filter(c => c.region === region);
+
+            filteredCities.forEach(city => {
+                const opt = document.createElement('option');
+                opt.value = `${city.lat},${city.lon},${city.name} (${city.province})`;
+                opt.textContent = `${city.name} - ${city.province}`;
+                citySelect.appendChild(opt);
+            });
+        }
+
+        // Initialization
+        window.addEventListener('DOMContentLoaded', () => {
+            populateCityDropdown();
+            initChart();
+            fetchAirQualityData();
+            
+            // Set auto refresh every 1 hour (3600000 ms)
+            setInterval(() => {
+                fetchAirQualityData();
+            }, 3600000);
+        });
+
+        // Event Listeners
+        regionFilter.addEventListener('change', () => {
+            populateCityDropdown(regionFilter.value);
+            fetchAirQualityData();
+        });
+
+        citySelect.addEventListener('change', () => fetchAirQualityData());
+        
+        refreshBtn.addEventListener('click', () => {
+            refreshIcon.classList.add('fa-spin');
+            fetchAirQualityData().finally(() => {
+                setTimeout(() => refreshIcon.classList.remove('fa-spin'), 600);
+            });
+        });
+
+        geoBtn.addEventListener('click', () => {
+            if (navigator.geolocation) {
+                geoBtn.disabled = true;
+                refreshIcon.classList.add('fa-spin');
+                navigator.geolocation.getCurrentPosition(
+                    (position) => {
+                        const lat = position.coords.latitude.toFixed(4);
+                        const lon = position.coords.longitude.toFixed(4);
+                        
+                        let customOpt = document.getElementById('customGeoOpt');
+                        if (!customOpt) {
+                            customOpt = document.createElement('option');
+                            customOpt.id = 'customGeoOpt';
+                            citySelect.insertBefore(customOpt, citySelect.firstChild);
+                        }
+                        customOpt.value = `${lat},${lon},Lokasi Saya (${lat}, ${lon})`;
+                        customOpt.textContent = `📍 Lokasi Saya (${lat}, ${lon})`;
+                        citySelect.value = customOpt.value;
+                        
+                        fetchAirQualityData().finally(() => {
+                            geoBtn.disabled = false;
+                            refreshIcon.classList.remove('fa-spin');
+                        });
+                    },
+                    (error) => {
+                        alert('Gagal mengambil lokasi. Pastikan izin lokasi diberikan.');
+                        geoBtn.disabled = false;
+                        refreshIcon.classList.remove('fa-spin');
+                    }
+                );
+            } else {
+                alert('Geolokasi tidak didukung oleh browser Anda.');
+            }
+        });
+
+        btnTrendPM25.addEventListener('click', () => {
+            activeParameter = 'pm2_5';
+            btnTrendPM25.className = 'px-3 py-1.5 rounded-lg font-semibold bg-blue-600 text-white transition';
+            btnTrendPM10.className = 'px-3 py-1.5 rounded-lg font-semibold text-slate-400 hover:text-slate-200 transition';
+            updateChart();
+        });
+
+        btnTrendPM10.addEventListener('click', () => {
+            activeParameter = 'pm10';
+            btnTrendPM10.className = 'px-3 py-1.5 rounded-lg font-semibold bg-blue-600 text-white transition';
+            btnTrendPM25.className = 'px-3 py-1.5 rounded-lg font-semibold text-slate-400 hover:text-slate-200 transition';
+            updateChart();
+        });
+
+        // Fetch Data from Open-Meteo Air Quality API
+        async function fetchAirQualityData() {
+            if (!citySelect.value) return;
+
+            const val = citySelect.value.split(',');
+            const lat = val[0];
+            const lon = val[1];
+            const cityName = val[2];
+
+            currentCityName.textContent = cityName;
+
+            const url = `https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${lat}&longitude=${lon}&hourly=pm10,pm2_5,carbon_monoxide,nitrogen_dioxide,sulphur_dioxide,ozone&timezone=Asia%2FJakarta&past_days=1&forecast_days=2`;
+
+            try {
+                const res = await fetch(url);
+                if (!res.ok) throw new Error('Gagal mengambil data dari server.');
+                const data = await res.json();
+
+                hourlyDataStore = data.hourly;
+                processAndDisplayData(data.hourly);
+            } catch (err) {
+                console.error(err);
+                aqiStatusText.textContent = 'Error Data';
+                healthAdvice.textContent = 'Gagal memperbarui data kualitas udara. Coba lagi beberapa saat lagi.';
+            }
+        }
+
+        // Process current hour data and update UI
+        function processAndDisplayData(hourly) {
+            const times = hourly.time;
+            const nowIso = new Date().toISOString().slice(0, 13);
+            
+            let currentIndex = times.findIndex(t => t.startsWith(nowIso));
+            if (currentIndex === -1) currentIndex = Math.floor(times.length / 2);
+
+            const pm25Val = hourly.pm2_5[currentIndex] || 0;
+            const pm10Val = hourly.pm10[currentIndex] || 0;
+            const o3Val = hourly.ozone[currentIndex] || 0;
+            const no2Val = hourly.nitrogen_dioxide[currentIndex] || 0;
+            const so2Val = hourly.sulphur_dioxide[currentIndex] || 0;
+            const coVal = hourly.carbon_monoxide[currentIndex] || 0;
+
+            const timeFormatted = new Date(times[currentIndex]).toLocaleString('id-ID', {
+                day: 'numeric',
+                month: 'short',
+                hour: '2-digit',
+                minute: '2-digit'
+            });
+            updateTime.textContent = `Update terakhir: ${timeFormatted} WIB`;
+
+            const category = getAQICategory(pm25Val);
+
+            aqiValue.textContent = Math.round(pm25Val);
+            aqiStatusText.textContent = category.label;
+            aqiStatusText.style.color = category.color;
+            aqiBadgeIcon.innerHTML = `<i class="fa-solid ${category.icon}"></i>`;
+            aqiBadgeIcon.style.color = category.color;
+
+            const percentage = Math.min(Math.max((pm25Val / 200) * 100, 5), 100);
+            aqiProgressBar.style.width = `${percentage}%`;
+            aqiProgressBar.style.backgroundColor = category.color;
+            cardGlow.style.backgroundColor = category.color;
+
+            healthAdvice.textContent = category.advice;
+            maskAdvice.textContent = category.mask;
+            vulnerableAdvice.textContent = category.vulnerable;
+
+            updateActivityBullets(pm25Val);
+
+            document.getElementById('pm25Val').textContent = pm25Val.toFixed(1);
+            document.getElementById('pm25Status').innerHTML = getSubStatusBadge(pm25Val, [15, 35, 75, 150]);
+
+            document.getElementById('pm10Val').textContent = pm10Val.toFixed(1);
+            document.getElementById('pm10Status').innerHTML = getSubStatusBadge(pm10Val, [50, 100, 150, 250]);
+
+            document.getElementById('o3Val').textContent = o3Val.toFixed(1);
+            document.getElementById('o3Status').innerHTML = getSubStatusBadge(o3Val, [60, 120, 180, 240]);
+
+            document.getElementById('no2Val').textContent = no2Val.toFixed(1);
+            document.getElementById('no2Status').innerHTML = getSubStatusBadge(no2Val, [40, 80, 180, 280]);
+
+            document.getElementById('so2Val').textContent = so2Val.toFixed(1);
+            document.getElementById('so2Status').innerHTML = getSubStatusBadge(so2Val, [20, 80, 250, 350]);
+
+            document.getElementById('coVal').textContent = coVal.toFixed(1);
+            document.getElementById('coStatus').innerHTML = getSubStatusBadge(coVal, [4000, 8000, 14000, 30000]);
+
+            updateChart();
+        }
+
+        function getAQICategory(pm25) {
+            if (pm25 <= 15.5) return STATUS_CONFIG.GOOD;
+            if (pm25 <= 55.4) return STATUS_CONFIG.MODERATE;
+            if (pm25 <= 150.4) return STATUS_CONFIG.UNHEALTHY_SENSITIVE;
+            if (pm25 <= 250.4) return STATUS_CONFIG.UNHEALTHY;
+            if (pm25 <= 500) return STATUS_CONFIG.VERY_UNHEALTHY;
+            return STATUS_CONFIG.HAZARDOUS;
+        }
+
+        function getSubStatusBadge(val, thresholds) {
+            if (val <= thresholds[0]) return `<span class="text-emerald-400 font-semibold">Bagus</span>`;
+            if (val <= thresholds[1]) return `<span class="text-amber-400 font-semibold">Sedang</span>`;
+            if (val <= thresholds[2]) return `<span class="text-orange-400 font-semibold">Tinggi</span>`;
+            return `<span class="text-red-400 font-semibold">Sangat Tinggi</span>`;
+        }
+
+        function updateActivityBullets(pm25) {
+            let html = '';
+            if (pm25 <= 15.5) {
+                html += `<li class="flex items-start gap-2"><i class="fa-solid fa-check text-emerald-400 mt-1 text-xs"></i><span>Sangat aman untuk jogging & jalan santai outdoor.</span></li>`;
+                html += `<li class="flex items-start gap-2"><i class="fa-solid fa-check text-emerald-400 mt-1 text-xs"></i><span>Sirkulasi udara ruangan (buka jendela) sangat disarankan.</span></li>`;
+            } else if (pm25 <= 55.4) {
+                html += `<li class="flex items-start gap-2"><i class="fa-solid fa-check text-emerald-400 mt-1 text-xs"></i><span>Aktivitas luar ruangan relatif aman.</span></li>`;
+                html += `<li class="flex items-start gap-2"><i class="fa-solid fa-triangle-exclamation text-amber-400 mt-1 text-xs"></i><span>Sensitif debu disarankan menggunakan masker medis biasa.</span></li>`;
+            } else {
+                html += `<li class="flex items-start gap-2"><i class="fa-solid fa-xmark text-red-400 mt-1 text-xs"></i><span>Gunakan Air Purifier jika tersedia di dalam rumah.</span></li>`;
+                html += `<li class="flex items-start gap-2"><i class="fa-solid fa-xmark text-red-400 mt-1 text-xs"></i><span>Gunakan masker N95 jika harus beraktivitas di jalan raya.</span></li>`;
+            }
+            activityList.innerHTML = html;
+        }
+
+        function initChart() {
+            const ctx = document.getElementById('aqiChart').getContext('2d');
+            
+            chartInstance = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: [{
+                        label: 'PM2.5 (µg/m³)',
+                        data: [],
+                        borderColor: '#3B82F6',
+                        backgroundColor: 'rgba(59, 130, 246, 0.15)',
+                        fill: true,
+                        tension: 0.4,
+                        borderWidth: 2,
+                        pointRadius: 2,
+                        pointHoverRadius: 6
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            backgroundColor: '#1e293b',
+                            titleColor: '#f8fafc',
+                            bodyColor: '#60a5fa',
+                            borderColor: '#334155',
+                            borderWidth: 1,
+                            padding: 10,
+                            displayColors: false,
+                            callbacks: {
+                                label: (context) => `Nilai: ${context.parsed.y} µg/m³`
+                            }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            grid: { color: 'rgba(255, 255, 255, 0.05)' },
+                            ticks: { color: '#94a3b8', font: { size: 10 } }
+                        },
+                        y: {
+                            grid: { color: 'rgba(255, 255, 255, 0.05)' },
+                            ticks: { color: '#94a3b8', font: { size: 10 } },
+                            beginAtZero: true
+                        }
+                    }
+                }
+            });
+        }
+
+        function updateChart() {
+            if (!hourlyDataStore || !chartInstance) return;
+
+            const times = hourlyDataStore.time;
+            const values = hourlyDataStore[activeParameter];
+
+            const nowIso = new Date().toISOString().slice(0, 13);
+            let currentIndex = times.findIndex(t => t.startsWith(nowIso));
+            if (currentIndex === -1) currentIndex = Math.floor(times.length / 2);
+
+            const start = Math.max(0, currentIndex - 18);
+            const end = Math.min(times.length, currentIndex + 18);
+
+            const sliceTimes = times.slice(start, end).map(t => {
+                const d = new Date(t);
+                const hour = d.getHours().toString().padStart(2, '0');
+                const day = d.getDate();
+                return `${day}b - ${hour}:00`;
+            });
+
+            const sliceValues = values.slice(start, end);
+
+            chartInstance.data.labels = sliceTimes;
+            chartInstance.data.datasets[0].data = sliceValues;
+            chartInstance.data.datasets[0].label = activeParameter === 'pm2_5' ? 'PM2.5 (µg/m³)' : 'PM10 (µg/m³)';
+            chartInstance.data.datasets[0].borderColor = activeParameter === 'pm2_5' ? '#3B82F6' : '#F59E0B';
+            chartInstance.data.datasets[0].backgroundColor = activeParameter === 'pm2_5' ? 'rgba(59, 130, 246, 0.15)' : 'rgba(245, 158, 11, 0.15)';
+
+            chartInstance.update();
+        }
+    </script>
+</body>
+</html>
